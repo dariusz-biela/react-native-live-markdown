@@ -70,6 +70,47 @@ type FormatSelectionResult = {
 
 type MarkdownTextInput = TextInput & React.Component<MarkdownTextInputProps>;
 
+type ParserRegistration = {
+  parser: MarkdownTextInputProps['parser'];
+  parserId: number;
+};
+
+// The effect body registers and its cleanup unregisters, so a remount of the effects alone (StrictMode, a hidden
+// `<Activity>` that is revealed) hands the decorator view a fresh id instead of leaving it on the erased one. The first
+// registration happens in render, which spares every mount a second commit and a re-measure of the input.
+// A layout effect flushes the replacement id in the same task as the commit that ran the cleanup, so both usually reach
+// the mounting layer as one native transaction. The native parser formats nothing for an id it cannot resolve.
+function useParserId(parser: MarkdownTextInputProps['parser']): number {
+  const initialRegistrationRef = React.useRef<ParserRegistration | null>(null);
+  if (initialRegistrationRef.current === null) {
+    initialRegistrationRef.current = {parser, parserId: registerParser(parser)};
+  }
+  const [parserId, setParserId] = React.useState(initialRegistrationRef.current.parserId);
+  const liveRegistrationRef = React.useRef<ParserRegistration | null>(initialRegistrationRef.current);
+
+  React.useLayoutEffect(() => {
+    const unregisterLiveParser = () => {
+      if (liveRegistrationRef.current === null) {
+        return;
+      }
+      unregisterParser(liveRegistrationRef.current.parserId);
+      liveRegistrationRef.current = null;
+    };
+
+    if (liveRegistrationRef.current?.parser === parser) {
+      return unregisterLiveParser;
+    }
+
+    unregisterLiveParser();
+    const nextParserId = registerParser(parser);
+    liveRegistrationRef.current = {parser, parserId: nextParserId};
+    setParserId(nextParserId);
+    return unregisterLiveParser;
+  }, [parser]);
+
+  return parserId;
+}
+
 function processColorsInMarkdownStyle(input: MarkdownStyle): MarkdownStyle {
   const output = JSON.parse(JSON.stringify(input));
 
@@ -104,13 +145,7 @@ const MarkdownTextInput = React.forwardRef<MarkdownTextInput, MarkdownTextInputP
     throw new Error('[react-native-live-markdown] `parser` is not a worklet');
   }
 
-  const parserId = React.useMemo(() => {
-    return registerParser(props.parser);
-  }, [props.parser]);
-
-  React.useEffect(() => {
-    return () => unregisterParser(parserId);
-  }, [parserId]);
+  const parserId = useParserId(props.parser);
 
   return (
     <MarkdownTextInputDecoratorViewNativeComponent
