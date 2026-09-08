@@ -75,11 +75,9 @@ type ParserRegistration = {
   parserId: number;
 };
 
-// The effect body registers and its cleanup unregisters, so a remount of the effects alone (StrictMode, a hidden
-// `<Activity>` that is revealed) hands the decorator view a fresh id instead of leaving it on the erased one. The first
-// registration happens in render, which spares every mount a second commit and a re-measure of the input.
-// A layout effect flushes the replacement id in the same task as the commit that ran the cleanup, so both usually reach
-// the mounting layer as one native transaction. The native parser formats nothing for an id it cannot resolve.
+// The first registration happens in render so the first commit already carries a resolvable id. The layout effect
+// re-registers after its own cleanup (StrictMode, a revealed `<Activity>`) and hands the fresh id to the decorator.
+// `initialRegistrationRef` is never cleared, otherwise a render inside a hidden `<Activity>` would register again.
 function useParserId(parser: MarkdownTextInputProps['parser']): number {
   const initialRegistrationRef = React.useRef<ParserRegistration | null>(null);
   if (initialRegistrationRef.current === null) {

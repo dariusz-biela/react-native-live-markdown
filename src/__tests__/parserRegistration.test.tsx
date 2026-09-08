@@ -13,7 +13,6 @@ import type {MarkdownTextInputProps} from '../MarkdownTextInput';
  */
 const liveParserIds = new Set<number>();
 let nextParserId = 1;
-let registerCallCount = 0;
 
 jest.mock('react-native', () => ({
   Platform: {OS: 'ios', select: (options: {ios?: unknown; default?: unknown}) => options.ios ?? options.default},
@@ -33,13 +32,12 @@ jest.mock('../MarkdownTextInputDecoratorViewNativeComponent', () => ({
   default: (props: {parserId: number; children: React.ReactNode}) => <div data-parser-id={props.parserId}>{props.children}</div>,
 }));
 
-// The component refuses a parser that is not a worklet, and the worklets babel plugin does not run under Jest, so the
-// hash that marks a function as a worklet is attached by hand.
-function createParserWorklet(workletHash: number) {
-  return Object.assign((): MarkdownRange[] => [], {__workletHash: workletHash});
+// The worklets babel plugin does not run under Jest, so the hash that marks a function as a worklet is attached by hand.
+function createParserWorklet() {
+  return Object.assign((): MarkdownRange[] => [], {__workletHash: 1});
 }
 
-const parser = createParserWorklet(1);
+const parser = createParserWorklet();
 
 let container: HTMLDivElement;
 let root: Root;
@@ -76,12 +74,10 @@ describe('MarkdownTextInput parser registration', () => {
   beforeEach(() => {
     liveParserIds.clear();
     nextParserId = 1;
-    registerCallCount = 0;
     global.jsi_setMarkdownRuntime = jest.fn();
     global.jsi_registerMarkdownWorklet = () => {
       const parserId = nextParserId;
       nextParserId += 1;
-      registerCallCount += 1;
       liveParserIds.add(parserId);
       return parserId;
     };
@@ -104,7 +100,7 @@ describe('MarkdownTextInput parser registration', () => {
   it('registers the parser once and renders its id on mount', () => {
     renderIntoRoot(<MarkdownTextInput parser={parser} />);
 
-    expect(registerCallCount).toBe(1);
+    expect(nextParserId).toBe(2);
     expectDecoratorOnTheOnlyLiveParserId();
   });
 
@@ -142,7 +138,7 @@ describe('MarkdownTextInput parser registration', () => {
   });
 
   it('drops the initial registration when the parser changes identity inside a hidden <Activity>', () => {
-    const nextParser = createParserWorklet(2);
+    const nextParser = createParserWorklet();
 
     renderInActivity(true);
     renderInActivity(true, nextParser);
@@ -155,7 +151,7 @@ describe('MarkdownTextInput parser registration', () => {
     renderIntoRoot(<MarkdownTextInput parser={parser} />);
     const initialParserId = getDecoratorParserId();
 
-    renderIntoRoot(<MarkdownTextInput parser={createParserWorklet(2)} />);
+    renderIntoRoot(<MarkdownTextInput parser={createParserWorklet()} />);
 
     expect(getDecoratorParserId()).not.toBe(initialParserId);
     expectDecoratorOnTheOnlyLiveParserId();
