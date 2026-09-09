@@ -17,6 +17,12 @@
   return self;
 }
 
+- (void)setParserId:(NSNumber *)parserId
+{
+  _parserId = parserId;
+  [_markdownParser setParserId:parserId];
+}
+
 - (void)applyMarkdownFormatting:(nonnull NSMutableAttributedString *)attributedString
       withDefaultTextAttributes:(nonnull NSDictionary<NSAttributedStringKey, id> *)defaultTextAttributes
 {
@@ -49,6 +55,7 @@
     _markdownStyle = markdownStyle;
     _parserId = parserId;
   }
+  [_markdownParser setParserId:parserId];
 
   NSString *text = attributedString.string;
   NSArray<MarkdownRange *> *markdownRanges = [_markdownParser cachedRangesForText:text withParserId:parserId];

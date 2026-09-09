@@ -34,9 +34,10 @@ void unregisterMarkdownWorklet(const int parserId) {
   globalMarkdownShareableWorklets.erase(parserId);
 }
 
-std::shared_ptr<SerializableWorklet> getMarkdownWorklet(const int parserId) {
+std::shared_ptr<SerializableWorklet> findMarkdownWorklet(const int parserId) {
   std::unique_lock<std::mutex> lock(globalMarkdownShareableWorkletsMutex);
-  return globalMarkdownShareableWorklets.at(parserId);
+  const auto it = globalMarkdownShareableWorklets.find(parserId);
+  return it == globalMarkdownShareableWorklets.end() ? nullptr : it->second;
 }
 
 } // namespace livemarkdown

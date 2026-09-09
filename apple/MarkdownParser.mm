@@ -56,6 +56,10 @@ static const NSUInteger kMarkdownParserCacheCapacity = 4;
   NSNumber *_pendingParserId;
   void (^_pendingCompletion)(void);
   BOOL _warmupScheduled;
+
+  // The worklet registered under `_parserId`, kept alive here (see the header).
+  NSNumber *_parserId;
+  std::shared_ptr<SerializableWorklet> _markdownWorklet;
 }
 
 - (instancetype)init
@@ -80,6 +84,39 @@ static const NSUInteger kMarkdownParserCacheCapacity = 4;
     queue = dispatch_queue_create("com.expensify.livemarkdown.parser-cache-warmup", attr);
   });
   return queue;
+}
+
+// An id the registry doesn't know leaves the previous worklet in place. The
+// measure path shares one parser between shadow node clones, so a clone that
+// still carries an older, already unregistered id must not drop the worklet
+// the current id resolved to.
+- (void)setParserId:(nonnull NSNumber *)parserId
+{
+  @synchronized (self) {
+    if ([_parserId isEqualToNumber:parserId]) {
+      return;
+    }
+    const auto markdownWorklet = expensify::livemarkdown::findMarkdownWorklet([parserId intValue]);
+    if (markdownWorklet == nullptr) {
+      return;
+    }
+    _parserId = parserId;
+    _markdownWorklet = markdownWorklet;
+  }
+}
+
+// A parse for the current id uses the worklet kept alive by `setParserId:`.
+// Any other id comes from a shadow node clone that still carries an older id,
+// so it is looked up in the registry the way it always was.
+- (std::shared_ptr<SerializableWorklet>)workletForParserId:(nonnull NSNumber *)parserId
+{
+  @synchronized (self) {
+    if ([_parserId isEqualToNumber:parserId]) {
+      return _markdownWorklet;
+    }
+  }
+
+  return expensify::livemarkdown::findMarkdownWorklet([parserId intValue]);
 }
 
 - (nullable NSArray<MarkdownRange *> *)cachedRangesForText:(nonnull NSString *)text
@@ -212,10 +249,8 @@ static const NSUInteger kMarkdownParserCacheCapacity = 4;
   const auto &markdownRuntime = expensify::livemarkdown::getMarkdownRuntime();
   jsi::Runtime &rt = markdownRuntime->getJSIRuntime();
 
-  std::shared_ptr<SerializableWorklet> markdownWorklet;
-  try {
-    markdownWorklet = expensify::livemarkdown::getMarkdownWorklet([parserId intValue]);
-  } catch (const std::out_of_range &error) {
+  const auto markdownWorklet = [self workletForParserId:parserId];
+  if (markdownWorklet == nullptr) {
     return @[];
   }
 
