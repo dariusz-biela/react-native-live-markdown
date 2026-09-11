@@ -246,13 +246,15 @@ static const NSUInteger kMarkdownParserCacheCapacity = 4;
 - (NSArray<MarkdownRange *> *)parseUncached:(nonnull NSString *)text
                                withParserId:(nonnull NSNumber *)parserId
 {
-  const auto &markdownRuntime = expensify::livemarkdown::getMarkdownRuntime();
-  jsi::Runtime &rt = markdownRuntime->getJSIRuntime();
-
+  // The first commit carries parserId 0, before JS has created the worklet runtime.
+  // Resolve the worklet before accessing that runtime.
   const auto markdownWorklet = [self workletForParserId:parserId];
   if (markdownWorklet == nullptr) {
     return @[];
   }
+
+  const auto &markdownRuntime = expensify::livemarkdown::getMarkdownRuntime();
+  jsi::Runtime &rt = markdownRuntime->getJSIRuntime();
 
   const auto &input = jsi::String::createFromUtf8(rt, [text UTF8String]);
 

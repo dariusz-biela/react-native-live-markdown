@@ -70,40 +70,15 @@ type FormatSelectionResult = {
 
 type MarkdownTextInput = TextInput & React.Component<MarkdownTextInputProps>;
 
-type ParserRegistration = {
-  parser: MarkdownTextInputProps['parser'];
-  parserId: number;
-};
-
-// The first registration happens in render so the first commit already carries a resolvable id. The layout effect
-// re-registers after its own cleanup (StrictMode, a revealed `<Activity>`) and hands the fresh id to the decorator.
-// `initialRegistrationRef` is never cleared, otherwise a render inside a hidden `<Activity>` would register again.
+// Register only after commit: a suspended or initially hidden render may never run an effect cleanup.
+// Zero means no parser yet. A layout effect publishes the registered id and restores it when effects reconnect.
 function useParserId(parser: MarkdownTextInputProps['parser']): number {
-  const initialRegistrationRef = React.useRef<ParserRegistration | null>(null);
-  if (initialRegistrationRef.current === null) {
-    initialRegistrationRef.current = {parser, parserId: registerParser(parser)};
-  }
-  const [parserId, setParserId] = React.useState(initialRegistrationRef.current.parserId);
-  const liveRegistrationRef = React.useRef<ParserRegistration | null>(initialRegistrationRef.current);
+  const [parserId, setParserId] = React.useState(0);
 
   React.useLayoutEffect(() => {
-    const unregisterLiveParser = () => {
-      if (liveRegistrationRef.current === null) {
-        return;
-      }
-      unregisterParser(liveRegistrationRef.current.parserId);
-      liveRegistrationRef.current = null;
-    };
-
-    if (liveRegistrationRef.current?.parser === parser) {
-      return unregisterLiveParser;
-    }
-
-    unregisterLiveParser();
     const nextParserId = registerParser(parser);
-    liveRegistrationRef.current = {parser, parserId: nextParserId};
     setParserId(nextParserId);
-    return unregisterLiveParser;
+    return () => unregisterParser(nextParserId);
   }, [parser]);
 
   return parserId;
